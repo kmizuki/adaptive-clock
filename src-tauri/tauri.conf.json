@@ -1,0 +1,35 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "identifier": "com.example.adaptiveclock",
+  "productName": "Adaptive Clock",
+  "version": "0.1.0",
+  "build": {
+    "beforeBuildCommand": "vite build",
+    "beforeDevCommand": "vite dev",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Adaptive Clock",
+        "label": "main",
+        "width": 340,
+        "height": 340,
+        "resizable": false,
+        "fullscreen": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null,
+      "capabilities": ["main"]
+    }
+  }
+}

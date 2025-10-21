@@ -1,0 +1,14 @@
+{
+  "templates": [
+    "Node",
+    "Rust",
+    "mise",
+    "macOS",
+    "Windows",
+    "VisualStudioCode",
+    "Cursor"
+  ],
+  "custom": {
+    "certificates": ["*.pem", "*.key", "*.crt", "*.cer", "*.der", "*.priv"]
+  }
+}
