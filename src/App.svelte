@@ -205,7 +205,7 @@ const uiState = {
   hourAngle: 0,
   minuteAngle: 0,
   secondAngle: 0,
-  statusMessage: "時刻同期を待機中…",
+  statusMessage: "時刻同期中…",
   digitalTime: DIGITAL_TIME_FORMATTER.format(new Date()),
   dateLabel: DIGITAL_DATE_FORMATTER.format(new Date()),
 };
@@ -240,7 +240,7 @@ function updateStatusMessage() {
     return;
   }
 
-  uiState.statusMessage = "時刻同期を待機中…";
+  uiState.statusMessage = "時刻同期中…";
 }
 
 function currentTimeFromSync(nowPerf: number): Date {
@@ -434,7 +434,7 @@ async function requestSync(manual = false) {
     updateStatusMessage();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    syncError = manual ? `手動同期に失敗しました: ${message}` : message;
+    syncError = manual ? `同期に失敗しました: ${message}` : message;
     updateStatusMessage();
   } finally {
     syncing = false;
@@ -694,7 +694,7 @@ onMount(() => {
         disabled={syncing}
         data-tauri-drag-region="false"
       >
-        {syncing ? "同期中…" : "再同期"}
+        {syncing ? "同期中…" : "時刻同期"}
       </button>
     </div>
   {/if}
