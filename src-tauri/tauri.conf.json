@@ -1,5 +1,5 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "identifier": "com.example.adaptiveclock",
   "productName": "Adaptive Clock",
   "version": "0.1.0",
@@ -24,7 +24,9 @@
         "fullscreen": false,
         "alwaysOnTop": true,
         "decorations": false,
-        "transparent": false
+        "transparent": true,
+        "shadow": false,
+        "backgroundColor": "#00000000"
       }
     ],
     "security": {
