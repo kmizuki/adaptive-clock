@@ -597,8 +597,8 @@ onMount(() => {
   >
     <span class="window-close-icon" aria-hidden="true"></span>
   </button>
-  <div class="clock">
-    <div class="dial">
+  <div class="clock" data-tauri-drag-region="true">
+    <div class="dial" data-tauri-drag-region="true">
       <div class="hand hour" style={`--angle: ${uiState.hourAngle}deg;`}></div>
       <div class="hand minute" style={`--angle: ${uiState.minuteAngle}deg;`}></div>
       <div class="hand second" style={`--angle: ${uiState.secondAngle}deg;`}></div>
