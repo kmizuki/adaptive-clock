@@ -102,6 +102,34 @@ const SYNC_TIME_FORMATTER = new Intl.DateTimeFormat(ACTIVE_LOCALE, {
   hourCycle: "h23",
 });
 
+type ThemeMode = "dark" | "light";
+const THEME_STORAGE_KEY = "adaptive-clock-theme";
+let theme: ThemeMode = "dark";
+
+function setTheme(value: ThemeMode, persist = true) {
+  theme = value;
+
+  if (typeof document !== "undefined") {
+    document.body.dataset.theme = value;
+    document.documentElement.style.setProperty(
+      "color-scheme",
+      value === "light" ? "light" : "dark"
+    );
+  }
+
+  if (persist && typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, value);
+    } catch {
+      /* ignore storage failures */
+    }
+  }
+}
+
+function toggleTheme() {
+  setTheme(theme === "dark" ? "light" : "dark");
+}
+
 async function ensureWindowPinning() {
   if (typeof window === "undefined") {
     return;
@@ -466,6 +494,21 @@ function schedulePeriodicSync() {
 }
 
 onMount(() => {
+  let initialTheme: ThemeMode = "dark";
+  if (typeof localStorage !== "undefined") {
+    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    if (storedTheme === "light" || storedTheme === "dark") {
+      initialTheme = storedTheme;
+    }
+  } else if (typeof window !== "undefined") {
+    const prefersLight = window.matchMedia?.("(prefers-color-scheme: light)");
+    if (prefersLight?.matches) {
+      initialTheme = "light";
+    }
+  }
+
+  setTheme(initialTheme, false);
+
   applySync(Date.now());
   requestSync(false);
   tick();
@@ -501,6 +544,11 @@ onMount(() => {
     }
     window.removeEventListener("keydown", handleEscape);
     window.removeEventListener("pointerdown", handleStagePointerDown, true);
+
+    if (typeof document !== "undefined") {
+      delete document.body.dataset.theme;
+      document.documentElement.style.removeProperty("color-scheme");
+    }
   };
 });
 </script>
@@ -563,6 +611,31 @@ onMount(() => {
       bind:this={controlsContainer}
       data-tauri-drag-region="false"
     >
+      <button
+        class="theme-toggle"
+        type="button"
+        data-tauri-drag-region="false"
+        on:click={toggleTheme}
+      >
+        <span class="theme-toggle-icon" aria-hidden="true">
+          {#if theme === "dark"}
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path
+                d="M21 12.79A9 9 0 0 1 11.21 3 7 7 0 1 0 21 12.79Z"
+              />
+            </svg>
+          {:else}
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path
+                d="M12 4.75a.75.75 0 0 1-.75-.75V2a.75.75 0 0 1 1.5 0v2a.75.75 0 0 1-.75.75Zm0 14.5a.75.75 0 0 1 .75.75v2a.75.75 0 0 1-1.5 0v-2a.75.75 0 0 1 .75-.75Zm8.25-7.75H22a.75.75 0 0 1 0 1.5h-1.75a.75.75 0 0 1 0-1.5ZM3.75 12A.75.75 0 0 1 3 12.75H1.25a.75.75 0 0 1 0-1.5H3a.75.75 0 0 1 .75.75ZM18.6 6.1a.75.75 0 0 1 0-1.06l1.23-1.24a.75.75 0 0 1 1.06 1.06l-1.23 1.24a.75.75 0 0 1-1.06 0ZM5.4 17.9a.75.75 0 0 1 0 1.06l-1.23 1.24a.75.75 0 0 1-1.06-1.06l1.23-1.24a.75.75 0 0 1 1.06 0Zm12.2 1.06a.75.75 0 0 1 1.06 0l1.23 1.24a.75.75 0 0 1-1.06 1.06l-1.23-1.24a.75.75 0 0 1 0-1.06ZM6.1 5.4a.75.75 0 0 1-1.06 0L3.81 4.16A.75.75 0 1 1 4.87 3.1L6.1 4.34a.75.75 0 0 1 0 1.06ZM12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Z"
+              />
+            </svg>
+          {/if}
+        </span>
+        <span class="theme-toggle-label">
+          {theme === "dark" ? "ライトテーマに切り替え" : "ダークテーマに切り替え"}
+        </span>
+      </button>
       <fieldset class="speed-group" data-tauri-drag-region="false">
         <legend class="control-label">秒針速度</legend>
         <div class="speed-options" bind:this={speedOptionsEl}>
