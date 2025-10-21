@@ -23,6 +23,12 @@ const SPEED_OPTIONS = [
   { value: QUADRUPLE_SPEED, label: "x4" },
 ];
 
+const SPEED_STORAGE_KEY = "adaptive-clock-speed";
+
+function isValidSpeed(value: number): boolean {
+  return SPEED_OPTIONS.some((option) => option.value === value);
+}
+
 const RESYNC_INTERVAL_MINUTES = 15;
 const MILLISECONDS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
@@ -174,7 +180,27 @@ async function ensureWindowPinning() {
   }
 }
 
-let speed = NORMAL_SPEED;
+function getSavedSpeed(): number | null {
+  if (typeof localStorage === "undefined") {
+    return null;
+  }
+
+  try {
+    const stored = localStorage.getItem(SPEED_STORAGE_KEY);
+    if (stored) {
+      const parsed = Number(stored);
+      if (Number.isFinite(parsed) && isValidSpeed(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {
+    /* ignore storage failures */
+  }
+
+  return null;
+}
+
+let speed = getSavedSpeed() ?? NORMAL_SPEED;
 const uiState = {
   hourAngle: 0,
   minuteAngle: 0,
@@ -426,6 +452,14 @@ function changeSpeed(next: number) {
   syncedPerfMs = nowPerf;
   speed = next;
   refreshHands(nowPerf);
+
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem(SPEED_STORAGE_KEY, String(next));
+    } catch {
+      /* ignore storage failures */
+    }
+  }
 }
 
 function handleStagePointerDown(event: PointerEvent) {
@@ -633,7 +667,7 @@ onMount(() => {
           {/if}
         </span>
         <span class="theme-toggle-label">
-          {theme === "dark" ? "ライトテーマに切り替え" : "ダークテーマに切り替え"}
+          {theme === "dark" ? "ダークテーマ" : "ライトテーマ"}
         </span>
       </button>
       <fieldset class="speed-group" data-tauri-drag-region="false">

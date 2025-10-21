@@ -1,7 +1,9 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vite";
 
-export default defineConfig(() => ({
+const devHost = process.env.TAURI_DEV_HOST;
+
+export default defineConfig({
   plugins: [
     svelte({
       compilerOptions: {
@@ -11,8 +13,16 @@ export default defineConfig(() => ({
   ],
   clearScreen: false,
   server: {
+    host: devHost ?? false,
     port: 1420,
     strictPort: true,
+    hmr: devHost
+      ? {
+          protocol: "ws",
+          host: devHost,
+          port: 1421,
+        }
+      : undefined,
   },
   envPrefix: ["VITE_", "TAURI_"],
   build: {
@@ -20,4 +30,4 @@ export default defineConfig(() => ({
     minify: process.env.TAURI_DEBUG ? false : "esbuild",
     sourcemap: !!process.env.TAURI_DEBUG,
   },
-}));
+});
