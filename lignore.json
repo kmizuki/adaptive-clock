@@ -9,6 +9,14 @@
     "Cursor"
   ],
   "custom": {
-    "certificates": ["*.pem", "*.key", "*.crt", "*.cer", "*.der", "*.priv"]
+    "certificates": [
+      "*.pem",
+      "*.key",
+      "*.crt",
+      "*.cer",
+      "*.der",
+      "*.priv",
+      ".serena/"
+    ]
   }
 }

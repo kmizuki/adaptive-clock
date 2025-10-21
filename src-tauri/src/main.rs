@@ -146,6 +146,7 @@ fn main() {
                 .get_webview_window("main")
                 .expect("main window unavailable");
             window.set_always_on_top(true)?;
+            window.set_visible_on_all_workspaces(true)?;
             let desired_size = LogicalSize::new(600.0, 600.0);
             window.set_size(Size::Logical(desired_size))?;
             let margin = 24.0;

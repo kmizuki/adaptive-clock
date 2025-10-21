@@ -1,5 +1,6 @@
 <script lang="ts">
 import { invoke } from "@tauri-apps/api/core";
+import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { onMount } from "svelte";
 
 type TimeSyncResult = { epoch_millis: number };
@@ -10,16 +11,16 @@ const THREE_HALVES_SPEED = 1.5;
 const DOUBLE_SPEED = 2;
 const TRIPLE_SPEED = 3;
 const QUADRUPLE_SPEED = 4;
-const TWO_THIRDS_SPEED = DOUBLE_SPEED / TRIPLE_SPEED;
+const THREE_QUARTERS_SPEED = 0.75;
 
 const SPEED_OPTIONS = [
-  { value: HALF_SPEED, label: "1/2×" },
-  { value: TWO_THIRDS_SPEED, label: "2/3×" },
-  { value: NORMAL_SPEED, label: "1×" },
-  { value: THREE_HALVES_SPEED, label: "3/2×" },
-  { value: DOUBLE_SPEED, label: "2×" },
-  { value: TRIPLE_SPEED, label: "3×" },
-  { value: QUADRUPLE_SPEED, label: "4×" },
+  { value: HALF_SPEED, label: "x0.5" },
+  { value: THREE_QUARTERS_SPEED, label: "x0.75" },
+  { value: NORMAL_SPEED, label: "x1" },
+  { value: THREE_HALVES_SPEED, label: "x1.5" },
+  { value: DOUBLE_SPEED, label: "x2" },
+  { value: TRIPLE_SPEED, label: "x3" },
+  { value: QUADRUPLE_SPEED, label: "x4" },
 ];
 
 const RESYNC_INTERVAL_MINUTES = 15;
@@ -37,6 +38,7 @@ const DEGREES_PER_HOUR = FULL_ROTATION_DEGREES / HOURS_PER_HALF_DAY;
 const TIME_API_ENDPOINT = "https://timeapi.io/api/Time/current/zone?timeZone=";
 
 const FALLBACK_LOCALE = "ja-JP";
+const FALLBACK_TIME_ZONE = "Asia/Tokyo";
 
 function resolveLocale(): string {
   if (typeof document !== "undefined") {
@@ -63,6 +65,24 @@ function resolveLocale(): string {
 }
 
 const ACTIVE_LOCALE = resolveLocale();
+const isWindowsPlatform =
+  typeof navigator !== "undefined" &&
+  /windows/i.test(
+    navigator.userAgent ||
+      (navigator as { userAgentData?: { platform?: string } }).userAgentData
+        ?.platform ||
+      ""
+  );
+
+let activeTimeZone = (() => {
+  try {
+    return (
+      Intl.DateTimeFormat().resolvedOptions().timeZone ?? FALLBACK_TIME_ZONE
+    );
+  } catch {
+    return FALLBACK_TIME_ZONE;
+  }
+})();
 
 const DIGITAL_TIME_FORMATTER = new Intl.DateTimeFormat(ACTIVE_LOCALE, {
   hour: "2-digit",
@@ -81,6 +101,50 @@ const SYNC_TIME_FORMATTER = new Intl.DateTimeFormat(ACTIVE_LOCALE, {
   minute: "2-digit",
   hourCycle: "h23",
 });
+
+async function ensureWindowPinning() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    const windowHandle = await ensureWindowHandle();
+    if (!windowHandle) {
+      return;
+    }
+    const applyPinning = () => {
+      windowHandle.setAlwaysOnBottom(false).catch(() => {
+        /* ignore pinning error */
+      });
+      windowHandle.setAlwaysOnTop(true).catch(() => {
+        /* ignore pinning error */
+      });
+      if (!isWindowsPlatform) {
+        windowHandle.setVisibleOnAllWorkspaces(true).catch(() => {
+          /* ignore pinning error */
+        });
+      }
+    };
+
+    applyPinning();
+
+    if (!pinningInterval) {
+      pinningInterval = window.setInterval(
+        applyPinning,
+        PINNING_REFRESH_INTERVAL_MS
+      );
+    }
+
+    if (!reapplyPinning) {
+      reapplyPinning = applyPinning;
+      window.addEventListener("focus", reapplyPinning);
+      window.addEventListener("blur", reapplyPinning);
+      document.addEventListener("visibilitychange", reapplyPinning);
+    }
+  } catch {
+    // Ignore failures; desktop app will still function without pinning.
+  }
+}
 
 let speed = NORMAL_SPEED;
 const uiState = {
@@ -101,10 +165,15 @@ let syncedEpochMs = Date.now();
 let syncedPerfMs = performance.now();
 let animationFrame = 0;
 let periodicSyncTimer: number | null = null;
-let speedSelect: HTMLSelectElement | null = null;
 let controlsOpen = false;
 let controlsContainer: HTMLDivElement | null = null;
 let toggleButtonEl: HTMLButtonElement | null = null;
+let pinningInterval: number | null = null;
+let reapplyPinning: (() => void) | null = null;
+let cachedWindow: WebviewWindow | null = null;
+let speedOptionsEl: HTMLDivElement | null = null;
+
+const PINNING_REFRESH_INTERVAL_MS = 15_000;
 
 function updateStatusMessage() {
   if (syncError) {
@@ -153,10 +222,6 @@ function computeAlignedSecondAngle(current: Date, nextSpeed: number): number {
   return (targetSeconds / SECONDS_PER_MINUTE) * FULL_ROTATION_DEGREES;
 }
 
-function isValidSpeed(value: number): boolean {
-  return SPEED_OPTIONS.some((option) => option.value === value);
-}
-
 function refreshHands(nowPerf: number) {
   const current = currentTimeFromSync(nowPerf);
   uiState.minuteAngle =
@@ -177,11 +242,7 @@ function applySync(epochMillis: number) {
 }
 
 function getLocalTimeZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  } catch {
-    return "Etc/UTC";
-  }
+  return activeTimeZone;
 }
 
 function supportsTauriInvoke(): boolean {
@@ -198,6 +259,26 @@ function supportsTauriInvoke(): boolean {
   ).__TAURI_INTERNALS__;
 
   return typeof internals?.invoke === "function";
+}
+
+async function ensureWindowHandle(): Promise<WebviewWindow | null> {
+  if (!supportsTauriInvoke()) {
+    return null;
+  }
+
+  if (cachedWindow) {
+    return cachedWindow;
+  }
+
+  try {
+    const { WebviewWindow: WebviewWindowModule } = await import(
+      "@tauri-apps/api/webviewWindow"
+    );
+    cachedWindow = WebviewWindowModule.getCurrent();
+    return cachedWindow;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchRemoteTime(timeZone: string): Promise<TimeSyncResult> {
@@ -319,22 +400,14 @@ function changeSpeed(next: number) {
   refreshHands(nowPerf);
 }
 
-function handleSpeedSelection(event: Event) {
-  const target = event.target as HTMLSelectElement;
-  const value = Number(target.value);
-  if (!(Number.isFinite(value) && isValidSpeed(value))) {
-    return;
-  }
-  changeSpeed(value);
-}
-
-$: if (controlsOpen && speedSelect) {
-  requestAnimationFrame(() => {
-    speedSelect?.focus();
-  });
-}
-
 function handleStagePointerDown(event: PointerEvent) {
+  if (speedOptionsEl && !event.composedPath().includes(speedOptionsEl)) {
+    // Ensure radio focus ring disappears when clicking elsewhere inside the HUD.
+    speedOptionsEl
+      .querySelector<HTMLInputElement>('input[name="speed"]:focus')
+      ?.blur();
+  }
+
   if (!controlsOpen) {
     return;
   }
@@ -349,6 +422,31 @@ function handleStagePointerDown(event: PointerEvent) {
   }
 
   controlsOpen = false;
+}
+
+$: if (controlsOpen) {
+  requestAnimationFrame(() => {
+    speedOptionsEl
+      ?.querySelector<HTMLInputElement>('input[name="speed"]:checked')
+      ?.focus();
+  });
+}
+
+async function closeWindow() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const windowHandle = await ensureWindowHandle();
+  if (!windowHandle) {
+    return;
+  }
+
+  try {
+    await windowHandle.close();
+  } catch {
+    // Closing is not available in this environment.
+  }
 }
 
 function tick() {
@@ -372,6 +470,7 @@ onMount(() => {
   requestSync(false);
   tick();
   schedulePeriodicSync();
+  ensureWindowPinning();
 
   const handleEscape = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -390,13 +489,32 @@ onMount(() => {
       clearInterval(periodicSyncTimer);
       periodicSyncTimer = null;
     }
+    if (pinningInterval) {
+      clearInterval(pinningInterval);
+      pinningInterval = null;
+    }
+    if (reapplyPinning) {
+      window.removeEventListener("focus", reapplyPinning);
+      window.removeEventListener("blur", reapplyPinning);
+      document.removeEventListener("visibilitychange", reapplyPinning);
+      reapplyPinning = null;
+    }
     window.removeEventListener("keydown", handleEscape);
     window.removeEventListener("pointerdown", handleStagePointerDown, true);
   };
 });
 </script>
 
-<div class="stage">
+<div class="stage" data-tauri-drag-region="true">
+  <button
+    class="window-close"
+    type="button"
+    aria-label="アプリを閉じる"
+    data-tauri-drag-region="false"
+    on:click={closeWindow}
+  >
+    <span class="window-close-icon" aria-hidden="true"></span>
+  </button>
   <div class="clock">
     <div class="dial">
       <div class="hand hour" style={`--angle: ${uiState.hourAngle}deg;`}></div>
@@ -417,6 +535,7 @@ onMount(() => {
     aria-expanded={controlsOpen}
     aria-controls="control-panel"
     bind:this={toggleButtonEl}
+    data-tauri-drag-region="false"
     on:click={() => {
       controlsOpen = !controlsOpen;
     }}
@@ -442,20 +561,31 @@ onMount(() => {
       role="group"
       aria-label="時計の設定"
       bind:this={controlsContainer}
+      data-tauri-drag-region="false"
     >
-      <div class="control-row">
-        <span class="control-label">秒針速度</span>
-        <select bind:this={speedSelect} on:change={handleSpeedSelection}>
+      <fieldset class="speed-group" data-tauri-drag-region="false">
+        <legend class="control-label">秒針速度</legend>
+        <div class="speed-options" bind:this={speedOptionsEl}>
           {#each SPEED_OPTIONS as option}
-            <option value={option.value} selected={option.value === speed}>{option.label}</option>
+            <label class="speed-option">
+              <input
+                type="radio"
+                name="speed"
+                value={option.value}
+                checked={option.value === speed}
+                on:change={() => changeSpeed(option.value)}
+              />
+              <span>{option.label}</span>
+            </label>
           {/each}
-        </select>
-      </div>
+        </div>
+      </fieldset>
       <button
         class="sync-button"
         type="button"
         on:click={() => requestSync(true)}
         disabled={syncing}
+        data-tauri-drag-region="false"
       >
         {syncing ? "同期中…" : "再同期"}
       </button>
