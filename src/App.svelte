@@ -25,6 +25,26 @@ const SPEED_OPTIONS = [
 
 const SPEED_STORAGE_KEY = "adaptive-clock-speed";
 
+const WINDOW_SCALE_OPTIONS = [
+  { value: 0.25, label: "25%" },
+  { value: 0.5, label: "50%" },
+  { value: 1, label: "100%" },
+  { value: 1.5, label: "150%" },
+  { value: 2, label: "200%" },
+] as const;
+
+type WindowScaleOption = (typeof WINDOW_SCALE_OPTIONS)[number];
+type WindowScaleValue = WindowScaleOption["value"];
+
+const WINDOW_SCALE_STORAGE_KEY = "adaptive-clock-window-scale";
+const DEFAULT_WINDOW_SCALE: WindowScaleValue = 1;
+const BASE_WINDOW_SIZE = 600;
+const MIN_WINDOW_SCALE = WINDOW_SCALE_OPTIONS.reduce<number>(
+  (lowest, option) => (option.value < lowest ? option.value : lowest),
+  WINDOW_SCALE_OPTIONS[0]?.value ?? DEFAULT_WINDOW_SCALE
+);
+const MIN_WINDOW_EDGE = BASE_WINDOW_SIZE * MIN_WINDOW_SCALE;
+
 function isValidSpeed(value: number): boolean {
   return SPEED_OPTIONS.some((option) => option.value === value);
 }
@@ -100,12 +120,6 @@ const DIGITAL_DATE_FORMATTER = new Intl.DateTimeFormat(ACTIVE_LOCALE, {
   weekday: "short",
   month: "short",
   day: "numeric",
-});
-
-const SYNC_TIME_FORMATTER = new Intl.DateTimeFormat(ACTIVE_LOCALE, {
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
 });
 
 type ThemeMode = "dark" | "light";
@@ -200,7 +214,34 @@ function getSavedSpeed(): number | null {
   return null;
 }
 
+function isWindowScaleValue(value: number): value is WindowScaleValue {
+  return WINDOW_SCALE_OPTIONS.some((option) => option.value === value);
+}
+
+function getSavedWindowScale(): WindowScaleValue | null {
+  if (typeof localStorage === "undefined") {
+    return null;
+  }
+
+  try {
+    const stored = localStorage.getItem(WINDOW_SCALE_STORAGE_KEY);
+    if (stored) {
+      const parsed = Number(stored);
+      if (Number.isFinite(parsed) && isWindowScaleValue(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {
+    /* ignore storage failures */
+  }
+
+  return null;
+}
+
 let speed = getSavedSpeed() ?? NORMAL_SPEED;
+let windowScale: WindowScaleValue =
+  getSavedWindowScale() ?? DEFAULT_WINDOW_SCALE;
+let windowScaleLabel = "";
 const uiState = {
   hourAngle: 0,
   minuteAngle: 0,
@@ -209,6 +250,14 @@ const uiState = {
   digitalTime: DIGITAL_TIME_FORMATTER.format(new Date()),
   dateLabel: DIGITAL_DATE_FORMATTER.format(new Date()),
 };
+
+if (typeof document !== "undefined") {
+  setUiScale(windowScale);
+}
+
+$: windowScaleLabel =
+  WINDOW_SCALE_OPTIONS.find((option) => option.value === windowScale)?.label ??
+  "";
 
 let lastSync: Date | null = null;
 let syncing = false;
@@ -225,8 +274,16 @@ let toggleButtonEl: HTMLButtonElement | null = null;
 let pinningInterval: number | null = null;
 let reapplyPinning: (() => void) | null = null;
 let cachedWindow: WebviewWindow | null = null;
+let windowScaleButtonEl: HTMLButtonElement | null = null;
+let windowScaleListEl: HTMLUListElement | null = null;
 let speedOptionsEl: HTMLDivElement | null = null;
-
+let windowScaleListOpen = false;
+let windowScaleActiveIndex = WINDOW_SCALE_OPTIONS.findIndex(
+  (option) => option.value === windowScale
+);
+if (windowScaleActiveIndex < 0) {
+  windowScaleActiveIndex = 0;
+}
 const PINNING_REFRESH_INTERVAL_MS = 15_000;
 
 function updateStatusMessage() {
@@ -441,6 +498,70 @@ async function requestSync(manual = false) {
   }
 }
 
+function computeWindowDimension(windowScaleValue: number): number {
+  const raw = Math.round(BASE_WINDOW_SIZE * windowScaleValue);
+  return Math.max(MIN_WINDOW_EDGE, raw);
+}
+
+function computeUiScale(windowScaleValue: number): number {
+  return computeWindowDimension(windowScaleValue) / BASE_WINDOW_SIZE;
+}
+
+function setUiScale(windowScaleValue: number) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const uiScale = computeUiScale(windowScaleValue);
+  document.documentElement.style.setProperty("--ui-scale", String(uiScale));
+}
+
+async function applyWindowScale(value: WindowScaleValue): Promise<void> {
+  setUiScale(value);
+
+  if (!supportsTauriInvoke()) {
+    return;
+  }
+
+  const windowHandle = await ensureWindowHandle();
+  if (!windowHandle) {
+    return;
+  }
+
+  const dimension = computeWindowDimension(value);
+
+  try {
+    await windowHandle.setResizable(true);
+  } catch {
+    /* ignore capability errors */
+  }
+
+  try {
+    const { LogicalSize } = await import("@tauri-apps/api/dpi");
+    await windowHandle.setSize(new LogicalSize(dimension, dimension));
+  } catch {
+    /* ignore resize failures */
+  }
+
+  try {
+    await windowHandle.setResizable(false);
+  } catch {
+    /* ignore capability errors */
+  }
+
+  try {
+    await windowHandle.center();
+  } catch {
+    /* ignore positioning failures */
+  }
+
+  try {
+    await windowHandle.show();
+  } catch {
+    /* ignore visibility failures */
+  }
+}
+
 function changeSpeed(next: number) {
   const nowPerf = performance.now();
   const current = currentTimeFromSync(nowPerf);
@@ -462,8 +583,136 @@ function changeSpeed(next: number) {
   }
 }
 
+function changeWindowScale(next: WindowScaleValue) {
+  if (windowScale === next) {
+    return;
+  }
+
+  windowScale = next;
+  windowScaleActiveIndex = WINDOW_SCALE_OPTIONS.findIndex(
+    (option) => option.value === windowScale
+  );
+  if (windowScaleActiveIndex < 0) {
+    windowScaleActiveIndex = 0;
+  }
+
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem(WINDOW_SCALE_STORAGE_KEY, String(next));
+    } catch {
+      /* ignore storage failures */
+    }
+  }
+
+  applyWindowScale(next).catch(() => {
+    /* ignore resize failures */
+  });
+}
+
+function focusWindowScaleOption(index: number) {
+  windowScaleActiveIndex = index;
+  requestAnimationFrame(() => {
+    windowScaleListEl
+      ?.querySelector<HTMLElement>(`#window-scale-option-${index}`)
+      ?.focus();
+  });
+}
+
+function openWindowScaleList() {
+  if (windowScaleListOpen) {
+    return;
+  }
+  windowScaleListOpen = true;
+  const selectedIndex = WINDOW_SCALE_OPTIONS.findIndex(
+    (option) => option.value === windowScale
+  );
+  windowScaleActiveIndex = selectedIndex >= 0 ? selectedIndex : 0;
+  focusWindowScaleOption(windowScaleActiveIndex);
+}
+
+function closeWindowScaleList() {
+  if (!windowScaleListOpen) {
+    return;
+  }
+  windowScaleListOpen = false;
+  requestAnimationFrame(() => {
+    windowScaleButtonEl?.focus();
+  });
+}
+
+function handleWindowScaleButtonKeydown(event: KeyboardEvent) {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    if (!windowScaleListOpen) {
+      openWindowScaleList();
+      return;
+    }
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex =
+      (windowScaleActiveIndex + direction + WINDOW_SCALE_OPTIONS.length) %
+      WINDOW_SCALE_OPTIONS.length;
+    focusWindowScaleOption(nextIndex);
+    return;
+  }
+
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    if (windowScaleListOpen) {
+      changeWindowScale(WINDOW_SCALE_OPTIONS[windowScaleActiveIndex].value);
+      closeWindowScaleList();
+    } else {
+      openWindowScaleList();
+    }
+  } else if (event.key === "Escape" && windowScaleListOpen) {
+    event.preventDefault();
+    closeWindowScaleList();
+  }
+}
+
+function handleWindowScaleOptionKeydown(event: KeyboardEvent) {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex =
+      (windowScaleActiveIndex + direction + WINDOW_SCALE_OPTIONS.length) %
+      WINDOW_SCALE_OPTIONS.length;
+    focusWindowScaleOption(nextIndex);
+    return;
+  }
+
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    changeWindowScale(WINDOW_SCALE_OPTIONS[windowScaleActiveIndex].value);
+    closeWindowScaleList();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    closeWindowScaleList();
+  }
+}
+
+function handleWindowScaleOptionClick(value: WindowScaleValue) {
+  changeWindowScale(value);
+  closeWindowScaleList();
+}
+
 function handleStagePointerDown(event: PointerEvent) {
-  if (speedOptionsEl && !event.composedPath().includes(speedOptionsEl)) {
+  const path = event.composedPath();
+
+  if (
+    windowScaleListOpen &&
+    windowScaleButtonEl &&
+    !path.includes(windowScaleButtonEl) &&
+    windowScaleListEl &&
+    !path.includes(windowScaleListEl)
+  ) {
+    windowScaleListOpen = false;
+  }
+
+  if (windowScaleButtonEl && !path.includes(windowScaleButtonEl)) {
+    windowScaleButtonEl.blur();
+  }
+
+  if (speedOptionsEl && !path.includes(speedOptionsEl)) {
     // Ensure radio focus ring disappears when clicking elsewhere inside the HUD.
     speedOptionsEl
       .querySelector<HTMLInputElement>('input[name="speed"]:focus')
@@ -474,7 +723,6 @@ function handleStagePointerDown(event: PointerEvent) {
     return;
   }
 
-  const path = event.composedPath();
   if (toggleButtonEl && path.includes(toggleButtonEl)) {
     return;
   }
@@ -488,10 +736,21 @@ function handleStagePointerDown(event: PointerEvent) {
 
 $: if (controlsOpen) {
   requestAnimationFrame(() => {
-    speedOptionsEl
-      ?.querySelector<HTMLInputElement>('input[name="speed"]:checked')
-      ?.focus();
+    const focusTarget =
+      (windowScaleListOpen
+        ? windowScaleListEl?.querySelector<HTMLElement>(
+            "[aria-selected='true']"
+          )
+        : windowScaleButtonEl) ??
+      speedOptionsEl?.querySelector<HTMLInputElement>(
+        'input[name="speed"]:checked'
+      );
+    focusTarget?.focus();
   });
+}
+
+$: if (!controlsOpen && windowScaleListOpen) {
+  windowScaleListOpen = false;
 }
 
 async function closeWindow() {
@@ -542,6 +801,9 @@ onMount(() => {
   }
 
   setTheme(initialTheme, false);
+  applyWindowScale(windowScale).catch(() => {
+    /* ignore resize failures */
+  });
 
   applySync(Date.now());
   requestSync(false);
@@ -582,69 +844,72 @@ onMount(() => {
     if (typeof document !== "undefined") {
       delete document.body.dataset.theme;
       document.documentElement.style.removeProperty("color-scheme");
+      document.documentElement.style.removeProperty("--ui-scale");
     }
   };
 });
 </script>
 
-<div class="stage" data-tauri-drag-region="true">
-  <button
-    class="window-close"
-    type="button"
-    aria-label="アプリを閉じる"
-    data-tauri-drag-region="false"
-    on:click={closeWindow}
-  >
-    <span class="window-close-icon" aria-hidden="true"></span>
-  </button>
-  <div class="clock" data-tauri-drag-region="true">
-    <div class="dial" data-tauri-drag-region="true">
-      <div class="hand hour" style={`--angle: ${uiState.hourAngle}deg;`}></div>
-      <div class="hand minute" style={`--angle: ${uiState.minuteAngle}deg;`}></div>
-      <div class="hand second" style={`--angle: ${uiState.secondAngle}deg;`}></div>
-      <div class="center-cap"></div>
-    </div>
-    <div class="info-layer" aria-hidden="true">
-      <div class="digital-time">{uiState.digitalTime}</div>
-      <div class="digital-date">{uiState.dateLabel}</div>
-      <div class="status-hint">{uiState.statusMessage}</div>
-    </div>
-  </div>
-
-  <button
-    class="controls-toggle"
-    type="button"
-    aria-expanded={controlsOpen}
-    aria-controls="control-panel"
-    bind:this={toggleButtonEl}
-    data-tauri-drag-region="false"
-    on:click={() => {
-      controlsOpen = !controlsOpen;
-    }}
-    on:keydown={(event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        controlsOpen = !controlsOpen;
-      }
-    }}
-  >
-    <span class="sr-only">設定を{controlsOpen ? "閉じる" : "開く"}</span>
-    <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-      <path
-        d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8.35-2.66-1.34-.77a6.04 6.04 0 0 0 0-1.14l1.34-.77a.69.69 0 0 0 .32-.82 9.93 9.93 0 0 0-1.63-2.82.69.69 0 0 0-.84-.18l-1.33.77a6.25 6.25 0 0 0-.99-.58l-.2-1.56a.69.69 0 0 0-.57-.6 9.92 9.92 0 0 0-3.27 0 .69.69 0 0 0-.57.6l-.2 1.56a6.25 6.25 0 0 0-.99.58l-1.33-.77a.69.69 0 0 0-.84.18 9.95 9.95 0 0 0-1.63 2.82.69.69 0 0 0 .32.82l1.34.77a5.8 5.8 0 0 0 0 1.14l-1.34.77a.69.69 0 0 0-.32.82c.36 1.05.91 2.02 1.63 2.82a.69.69 0 0 0 .84.18l1.33-.77c.3.22.64.42.99.58l.2 1.56c.04.29.26.53.57.6a9.92 9.92 0 0 0 3.27 0 .69.69 0 0 0 .57-.6l.2-1.56c.35-.16.69-.36.99-.58l1.33.77a.69.69 0 0 0 .84-.18c.72-.8 1.27-1.77 1.63-2.82a.69.69 0 0 0-.32-.82Z"
-      />
-    </svg>
-  </button>
-
-  {#if controlsOpen}
-    <div
-      id="control-panel"
-      class="hud"
-      role="group"
-      aria-label="時計の設定"
-      bind:this={controlsContainer}
+<div class="scaled-root" data-tauri-drag-region="true">
+  <div class="scaled-content" data-tauri-drag-region="true">
+    <div class="stage" data-tauri-drag-region="true">
+    <button
+      class="window-close"
+      type="button"
+      aria-label="アプリを閉じる"
       data-tauri-drag-region="false"
+      on:click={closeWindow}
     >
+      <span class="window-close-icon" aria-hidden="true"></span>
+    </button>
+    <div class="clock" data-tauri-drag-region="true">
+      <div class="dial" data-tauri-drag-region="true">
+        <div class="hand hour" style={`--angle: ${uiState.hourAngle}deg;`}></div>
+        <div class="hand minute" style={`--angle: ${uiState.minuteAngle}deg;`}></div>
+        <div class="hand second" style={`--angle: ${uiState.secondAngle}deg;`}></div>
+        <div class="center-cap"></div>
+      </div>
+      <div class="info-layer" aria-hidden="true">
+        <div class="digital-time">{uiState.digitalTime}</div>
+        <div class="digital-date">{uiState.dateLabel}</div>
+        <div class="status-hint">{uiState.statusMessage}</div>
+      </div>
+    </div>
+
+    <button
+      class="controls-toggle"
+      type="button"
+      aria-expanded={controlsOpen}
+      aria-controls="control-panel"
+      bind:this={toggleButtonEl}
+      data-tauri-drag-region="false"
+      on:click={() => {
+        controlsOpen = !controlsOpen;
+      }}
+      on:keydown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          controlsOpen = !controlsOpen;
+        }
+      }}
+    >
+      <span class="sr-only">設定を{controlsOpen ? "閉じる" : "開く"}</span>
+      <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+        <path
+          d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8.35-2.66-1.34-.77a6.04 6.04 0 0 0 0-1.14l1.34-.77a.69.69 0 0 0 .32-.82 9.93 9.93 0 0 0-1.63-2.82.69.69 0 0 0-.84-.18l-1.33.77a6.25 6.25 0 0 0-.99-.58l-.2-1.56a.69.69 0 0 0-.57-.6 9.92 9.92 0 0 0-3.27 0 .69.69 0 0 0-.57.6l-.2 1.56a6.25 6.25 0 0 0-.99.58l-1.33-.77a.69.69 0 0 0-.84.18 9.95 9.95 0 0 0-1.63 2.82.69.69 0 0 0 .32.82l1.34.77a5.8 5.8 0 0 0 0 1.14l-1.34.77a.69.69 0 0 0-.32.82c.36 1.05.91 2.02 1.63 2.82a.69.69 0 0 0 .84.18l1.33-.77c.3.22.64.42.99.58l.2 1.56c.04.29.26.53.57.6a9.92 9.92 0 0 0 3.27 0 .69.69 0 0 0 .57-.6l.2-1.56c.35-.16.69-.36.99-.58l1.33.77a.69.69 0 0 0 .84-.18c.72-.8 1.27-1.77 1.63-2.82a.69.69 0 0 0-.32-.82Z"
+        />
+      </svg>
+    </button>
+
+    {#if controlsOpen}
+      <div
+        id="control-panel"
+        class="hud"
+        role="group"
+        aria-label="時計の設定"
+        bind:this={controlsContainer}
+        data-tauri-drag-region="false"
+      >
       <button
         class="theme-toggle"
         type="button"
@@ -670,6 +935,59 @@ onMount(() => {
           {theme === "dark" ? "ダークテーマ" : "ライトテーマ"}
         </span>
       </button>
+      <fieldset class="size-group" data-tauri-drag-region="false">
+        <legend class="control-label">サイズ倍率</legend>
+        <div class="size-field">
+          <button
+            class="size-button"
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={windowScaleListOpen}
+            aria-controls="window-scale-list"
+            data-tauri-drag-region="false"
+            bind:this={windowScaleButtonEl}
+            on:click={() => {
+              windowScaleListOpen ? closeWindowScaleList() : openWindowScaleList();
+            }}
+            on:keydown={handleWindowScaleButtonKeydown}
+          >
+            <span class="size-button-label">
+              {windowScaleLabel}
+            </span>
+            <span class="size-button-icon" aria-hidden="true"></span>
+          </button>
+          {#if windowScaleListOpen}
+            <ul
+              id="window-scale-list"
+              class="size-options-menu"
+              role="listbox"
+              aria-activedescendant={`window-scale-option-${windowScaleActiveIndex}`}
+              bind:this={windowScaleListEl}
+              tabindex="0"
+            >
+              {#each WINDOW_SCALE_OPTIONS as option, index}
+                <li
+                  id={`window-scale-option-${index}`}
+                  role="option"
+                  aria-selected={option.value === windowScale}
+                  class:selected={option.value === windowScale}
+                  tabindex="-1"
+                  on:click={() => handleWindowScaleOptionClick(option.value)}
+                  on:keydown={handleWindowScaleOptionKeydown}
+                  on:mouseenter={() => {
+                    windowScaleActiveIndex = index;
+                  }}
+                >
+                  {option.label}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+        <p id="window-scale-note" class="field-hint">
+          倍率に応じてウィンドウや操作パネルのサイズが変わります。
+        </p>
+      </fieldset>
       <fieldset class="speed-group" data-tauri-drag-region="false">
         <legend class="control-label">秒針速度</legend>
         <div class="speed-options" bind:this={speedOptionsEl}>
@@ -700,4 +1018,6 @@ onMount(() => {
   {/if}
 
   <span class="sr-only" aria-live="polite">{uiState.statusMessage}</span>
+    </div>
+  </div>
 </div>
