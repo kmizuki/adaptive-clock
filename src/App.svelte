@@ -26,11 +26,10 @@ const SPEED_OPTIONS = [
 const SPEED_STORAGE_KEY = "adaptive-clock-speed";
 
 const WINDOW_SCALE_OPTIONS = [
-  { value: 0.25, label: "25%" },
   { value: 0.5, label: "50%" },
+  { value: 0.75, label: "75%" },
   { value: 1, label: "100%" },
   { value: 1.5, label: "150%" },
-  { value: 2, label: "200%" },
 ] as const;
 
 type WindowScaleOption = (typeof WINDOW_SCALE_OPTIONS)[number];

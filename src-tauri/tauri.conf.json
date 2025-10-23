@@ -12,7 +12,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.ico", "icons/icon.png"]
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "windows": {
+      "iconPath": "icons/icon.ico"
+    }
   },
   "app": {
     "windows": [
@@ -27,12 +30,17 @@
         "decorations": false,
         "transparent": true,
         "shadow": false,
-        "backgroundColor": "#00000000"
+        "backgroundColor": "#00000000",
+        "skipTaskbar": true
       }
     ],
     "security": {
       "csp": null,
       "capabilities": ["main"]
+    },
+    "systemTray": {
+      "iconPath": "icons/icon.ico",
+      "iconAsTemplate": false
     }
   }
 }

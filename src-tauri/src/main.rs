@@ -5,7 +5,10 @@ use std::time::Duration;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{LogicalSize, Manager, PhysicalPosition, Size};
+use tauri::{
+    CustomMenuItem, LogicalSize, Manager, PhysicalPosition, Size, SystemTray, SystemTrayEvent,
+    SystemTrayMenu, SystemTrayMenuItem,
+};
 use thiserror::Error;
 
 const MILLIS_PER_SECOND: i64 = 1000;
@@ -140,13 +143,59 @@ fn value_to_i64(value: &Value) -> Option<i64> {
 }
 
 fn main() {
+    let show_item = CustomMenuItem::new("show".to_string(), "Show");
+    let hide_item = CustomMenuItem::new("hide".to_string(), "Hide");
+    let quit_item = CustomMenuItem::new("quit".to_string(), "Quit");
+
+    let tray_menu = SystemTrayMenu::new()
+        .add_item(show_item)
+        .add_item(hide_item)
+        .add_native_item(SystemTrayMenuItem::Separator)
+        .add_item(quit_item);
+
+    let system_tray = SystemTray::new().with_menu(tray_menu);
+
     tauri::Builder::default()
+        .system_tray(system_tray)
+        .on_system_tray_event(|app, event| match event {
+            SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
+                "quit" => app.exit(0),
+                "show" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                "hide" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                }
+                _ => {}
+            },
+            SystemTrayEvent::LeftClick { .. } | SystemTrayEvent::DoubleClick { .. } => {
+                if let Some(window) = app.get_webview_window("main") {
+                    match window.is_visible() {
+                        Ok(true) => {
+                            let _ = window.hide();
+                        }
+                        Ok(false) => {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                        Err(_) => {}
+                    }
+                }
+            }
+            _ => {}
+        })
         .setup(|app| {
             let window = app
                 .get_webview_window("main")
                 .expect("main window unavailable");
             window.set_always_on_top(true)?;
             window.set_visible_on_all_workspaces(true)?;
+            window.set_skip_taskbar(true)?;
             let desired_size = LogicalSize::new(600.0, 600.0);
             window.set_size(Size::Logical(desired_size))?;
             let margin = 24.0;
