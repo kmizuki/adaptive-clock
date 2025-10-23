@@ -16,6 +16,9 @@ export default defineConfig({
     host: devHost ?? false,
     port: 1420,
     strictPort: true,
+    watch: {
+      ignored: ["**/src-tauri/target/**"],
+    },
     hmr: devHost
       ? {
           protocol: "ws",
@@ -25,6 +28,9 @@ export default defineConfig({
       : undefined,
   },
   envPrefix: ["VITE_", "TAURI_"],
+  optimizeDeps: {
+    entries: ["index.html", "src/main.ts"],
+  },
   build: {
     target: ["esnext", "chrome107", "safari16"],
     minify: process.env.TAURI_DEBUG ? false : "esbuild",

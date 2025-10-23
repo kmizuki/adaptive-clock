@@ -852,16 +852,45 @@ onMount(() => {
 <div class="scaled-root" data-tauri-drag-region="true">
   <div class="scaled-content" data-tauri-drag-region="true">
     <div class="stage" data-tauri-drag-region="true">
-    <button
-      class="window-close"
-      type="button"
-      aria-label="アプリを閉じる"
-      data-tauri-drag-region="false"
-      on:click={closeWindow}
-    >
-      <span class="window-close-icon" aria-hidden="true"></span>
-    </button>
     <div class="clock" data-tauri-drag-region="true">
+      <div
+        class="clock-actions"
+        data-tauri-drag-region="false"
+      >
+        <button
+          class="controls-toggle"
+          type="button"
+          aria-expanded={controlsOpen}
+          aria-controls="control-panel"
+          bind:this={toggleButtonEl}
+          data-tauri-drag-region="false"
+          on:click={() => {
+            controlsOpen = !controlsOpen;
+          }}
+          on:keydown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              controlsOpen = !controlsOpen;
+            }
+          }}
+        >
+          <span class="sr-only">設定を{controlsOpen ? "閉じる" : "開く"}</span>
+          <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+            <path
+              d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8.35-2.66-1.34-.77a6.04 6.04 0 0 0 0-1.14l1.34-.77a.69.69 0 0 0 .32-.82 9.93 9.93 0 0 0-1.63-2.82.69.69 0 0 0-.84-.18l-1.33.77a6.25 6.25 0 0 0-.99-.58l-.2-1.56a.69.69 0 0 0-.57-.6 9.92 9.92 0 0 0-3.27 0 .69.69 0 0 0-.57.6l-.2 1.56a6.25 6.25 0 0 0-.99.58l-1.33-.77a.69.69 0 0 0-.84.18 9.95 9.95 0 0 0-1.63 2.82.69.69 0 0 0 .32.82l1.34.77a5.8 5.8 0 0 0 0 1.14l-1.34.77a.69.69 0 0 0-.32.82c.36 1.05.91 2.02 1.63 2.82a.69.69 0 0 0 .84.18l1.33-.77c.3.22.64.42.99.58l.2 1.56c.04.29.26.53.57.6a9.92 9.92 0 0 0 3.27 0 .69.69 0 0 0 .57-.6l.2-1.56c.35-.16.69-.36.99-.58l1.33.77a.69.69 0 0 0 .84-.18c.72-.8 1.27-1.77 1.63-2.82a.69.69 0 0 0-.32-.82Z"
+            />
+          </svg>
+        </button>
+        <button
+          class="window-close"
+          type="button"
+          aria-label="アプリを閉じる"
+          data-tauri-drag-region="false"
+          on:click={closeWindow}
+        >
+          <span class="window-close-icon" aria-hidden="true"></span>
+        </button>
+      </div>
       <div class="dial" data-tauri-drag-region="true">
         <div class="hand hour" style={`--angle: ${uiState.hourAngle}deg;`}></div>
         <div class="hand minute" style={`--angle: ${uiState.minuteAngle}deg;`}></div>
@@ -874,31 +903,6 @@ onMount(() => {
         <div class="status-hint">{uiState.statusMessage}</div>
       </div>
     </div>
-
-    <button
-      class="controls-toggle"
-      type="button"
-      aria-expanded={controlsOpen}
-      aria-controls="control-panel"
-      bind:this={toggleButtonEl}
-      data-tauri-drag-region="false"
-      on:click={() => {
-        controlsOpen = !controlsOpen;
-      }}
-      on:keydown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          controlsOpen = !controlsOpen;
-        }
-      }}
-    >
-      <span class="sr-only">設定を{controlsOpen ? "閉じる" : "開く"}</span>
-      <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-        <path
-          d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8.35-2.66-1.34-.77a6.04 6.04 0 0 0 0-1.14l1.34-.77a.69.69 0 0 0 .32-.82 9.93 9.93 0 0 0-1.63-2.82.69.69 0 0 0-.84-.18l-1.33.77a6.25 6.25 0 0 0-.99-.58l-.2-1.56a.69.69 0 0 0-.57-.6 9.92 9.92 0 0 0-3.27 0 .69.69 0 0 0-.57.6l-.2 1.56a6.25 6.25 0 0 0-.99.58l-1.33-.77a.69.69 0 0 0-.84.18 9.95 9.95 0 0 0-1.63 2.82.69.69 0 0 0 .32.82l1.34.77a5.8 5.8 0 0 0 0 1.14l-1.34.77a.69.69 0 0 0-.32.82c.36 1.05.91 2.02 1.63 2.82a.69.69 0 0 0 .84.18l1.33-.77c.3.22.64.42.99.58l.2 1.56c.04.29.26.53.57.6a9.92 9.92 0 0 0 3.27 0 .69.69 0 0 0 .57-.6l.2-1.56c.35-.16.69-.36.99-.58l1.33.77a.69.69 0 0 0 .84-.18c.72-.8 1.27-1.77 1.63-2.82a.69.69 0 0 0-.32-.82Z"
-        />
-      </svg>
-    </button>
 
     {#if controlsOpen}
       <div

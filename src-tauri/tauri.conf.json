@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "identifier": "com.example.adaptiveclock",
   "productName": "Adaptive Clock",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "build": {
     "beforeBuildCommand": "vite build",
     "beforeDevCommand": "vite dev",
@@ -15,6 +15,7 @@
     "icon": ["icons/icon.ico", "icons/icon.png"]
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Adaptive Clock",
