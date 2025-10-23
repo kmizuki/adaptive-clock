@@ -6,12 +6,19 @@ use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{
-    CustomMenuItem, LogicalSize, Manager, PhysicalPosition, Size, SystemTray, SystemTrayEvent,
-    SystemTrayMenu, SystemTrayMenuItem,
+    AppHandle, LogicalSize, Manager, PhysicalPosition, Size,
+    menu::{MenuBuilder, MenuItemBuilder},
+    tray::{MouseButton, MouseButtonState, TrayIconEvent},
 };
 use thiserror::Error;
 
 const MILLIS_PER_SECOND: i64 = 1000;
+
+const MAIN_WINDOW_LABEL: &str = "main";
+const TRAY_ID_MAIN: &str = "main";
+const MENU_ID_SHOW: &str = "tray-show";
+const MENU_ID_HIDE: &str = "tray-hide";
+const MENU_ID_QUIT: &str = "tray-quit";
 
 #[derive(Debug, Error)]
 enum TimeSyncError {
@@ -142,56 +149,52 @@ fn value_to_i64(value: &Value) -> Option<i64> {
     }
 }
 
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn hide_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let _ = window.hide();
+    }
+}
+
+fn toggle_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        match window.is_visible() {
+            Ok(true) => {
+                let _ = window.hide();
+            }
+            Ok(false) => {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            Err(_) => {}
+        }
+    }
+}
+
 fn main() {
-    let show_item = CustomMenuItem::new("show".to_string(), "Show");
-    let hide_item = CustomMenuItem::new("hide".to_string(), "Hide");
-    let quit_item = CustomMenuItem::new("quit".to_string(), "Quit");
-
-    let tray_menu = SystemTrayMenu::new()
-        .add_item(show_item)
-        .add_item(hide_item)
-        .add_native_item(SystemTrayMenuItem::Separator)
-        .add_item(quit_item);
-
-    let system_tray = SystemTray::new().with_menu(tray_menu);
-
     tauri::Builder::default()
-        .system_tray(system_tray)
-        .on_system_tray_event(|app, event| match event {
-            SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
-                "quit" => app.exit(0),
-                "show" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
-                "hide" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.hide();
-                    }
-                }
-                _ => {}
-            },
-            SystemTrayEvent::LeftClick { .. } | SystemTrayEvent::DoubleClick { .. } => {
-                if let Some(window) = app.get_webview_window("main") {
-                    match window.is_visible() {
-                        Ok(true) => {
-                            let _ = window.hide();
-                        }
-                        Ok(false) => {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                        Err(_) => {}
-                    }
-                }
+        .on_tray_icon_event(|app, event| match event {
+            TrayIconEvent::Click {
+                button,
+                button_state,
+                ..
+            } if button == MouseButton::Left && button_state == MouseButtonState::Up => {
+                toggle_main_window(app);
+            }
+            TrayIconEvent::DoubleClick { .. } => {
+                show_main_window(app);
             }
             _ => {}
         })
         .setup(|app| {
             let window = app
-                .get_webview_window("main")
+                .get_webview_window(MAIN_WINDOW_LABEL)
                 .expect("main window unavailable");
             window.set_always_on_top(true)?;
             window.set_visible_on_all_workspaces(true)?;
@@ -210,6 +213,28 @@ fn main() {
                     y: y.round() as i32,
                 }))?;
             }
+
+            if let Some(tray) = app.tray_by_id(TRAY_ID_MAIN) {
+                let show_item = MenuItemBuilder::with_id(MENU_ID_SHOW, "Show").build(app)?;
+                let hide_item = MenuItemBuilder::with_id(MENU_ID_HIDE, "Hide").build(app)?;
+                let quit_item = MenuItemBuilder::with_id(MENU_ID_QUIT, "Quit").build(app)?;
+
+                let tray_menu = MenuBuilder::new(app)
+                    .item(&show_item)
+                    .item(&hide_item)
+                    .separator()
+                    .item(&quit_item)
+                    .build()?;
+
+                tray.set_menu(Some(tray_menu))?;
+            }
+
+            app.on_menu_event(|app_handle, event| match event.id().as_ref() {
+                MENU_ID_SHOW => show_main_window(app_handle),
+                MENU_ID_HIDE => hide_main_window(app_handle),
+                MENU_ID_QUIT => app_handle.exit(0),
+                _ => {}
+            });
 
             Ok(())
         })

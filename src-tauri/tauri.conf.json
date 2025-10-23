@@ -12,10 +12,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.ico", "icons/icon.png"],
-    "windows": {
-      "iconPath": "icons/icon.ico"
-    }
+    "icon": ["icons/icon.ico", "icons/icon.png"]
   },
   "app": {
     "windows": [
@@ -38,7 +35,7 @@
       "csp": null,
       "capabilities": ["main"]
     },
-    "systemTray": {
+    "trayIcon": {
       "iconPath": "icons/icon.ico",
       "iconAsTemplate": false
     }
